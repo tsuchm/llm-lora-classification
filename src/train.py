@@ -57,7 +57,8 @@ class Experiment:
     def __init__(self, args: Args):
         self.args: Args = args
 
-        use_fast = not ("japanese-gpt-neox" in args.model_name)
+        use_fast = not (("japanese-gpt-neox" in args.model_name) or
+                        ("bilingual-gpt-neox" in args.model_name))
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
             args.model_name,
             model_max_length=args.max_seq_len,
@@ -239,6 +240,10 @@ class Experiment:
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "results": [{"id": i,
+                         "gold_label": g,
+                         "predicted_label": p}
+                        for i,g,p in zip([d["id"] for d in dataloader.dataset], gold_labels, pred_labels)]
         }
 
     def log(self, metrics: dict) -> None:
