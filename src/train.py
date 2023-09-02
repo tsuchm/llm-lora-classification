@@ -205,13 +205,13 @@ class Experiment:
         self.model.load_state_dict(best_state_dict)
         self.model.eval()
 
-        val_metrics = {"best-epoch": best_epoch, **self.evaluate(self.val_dataloader)}
-        test_metrics = self.evaluate(self.test_dataloader)
+        val_metrics = {"best-epoch": best_epoch, **self.evaluate(self.val_dataloader, need_detail=True)}
+        test_metrics = self.evaluate(self.test_dataloader, need_detail=True)
 
         return val_metrics, test_metrics
 
     @torch.inference_mode()
-    def evaluate(self, dataloader: DataLoader) -> dict[str, float]:
+    def evaluate(self, dataloader: DataLoader, need_detail: bool=False) -> dict[str, float|dict]:
         self.model.eval()
         total_loss, gold_labels, pred_labels = 0, [], []
 
@@ -234,17 +234,19 @@ class Experiment:
             labels=args.labels,
         )
 
-        return {
+        x: dict = {
             "loss": loss / len(dataloader.dataset),
             "accuracy": accuracy,
             "precision": precision,
             "recall": recall,
             "f1": f1,
-            "results": [{"id": i,
-                         "gold_label": g,
-                         "predicted_label": p}
-                        for i,g,p in zip([d["id"] for d in dataloader.dataset], gold_labels, pred_labels)]
         }
+        if need_detail:
+            x["results"] = [{"id": i,
+                             "gold_label": g,
+                             "predicted_label": p}
+                            for i,g,p in zip([d["id"] for d in dataloader.dataset], gold_labels, pred_labels)]
+        return x
 
     def log(self, metrics: dict) -> None:
         utils.log(metrics, self.args.output_dir / "log.csv")
