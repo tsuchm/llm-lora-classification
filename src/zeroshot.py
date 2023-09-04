@@ -4,13 +4,17 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 import torch
 from transformers import pipeline
+from transformers.pipelines.base import KeyDataset
+from datasets import load_dataset
 
 import src.utils as utils
 
 class Args(Tap):
     model_name: str = "facebook/bart-large-mnli"
-    output_file: Path = None
     dataset_dir: Path = "./datasets/snli"
+    output_file: Path = None
+    device: int = 0 if torch.cuda.is_available() else -1
+    batch_size: int = 16
 
     def process_args(self):
         self.label2id: dict[str, int] = utils.load_json(self.dataset_dir / "label2id.json")
@@ -18,19 +22,27 @@ class Args(Tap):
         self.test_file: Path = self.dataset_dir / "test.jsonl"
 
 def main(args):
-    classifier = pipeline(model=args.model_name,
-                          device=0 if torch.cuda.is_available() else -1)
+    dataset = load_dataset('json', data_files={'test': str(args.test_file)}, split='test')
+    def dsconv(x):
+        x['text'] = x['title'] + "\n" + x['body']
+        return x
+    dataset = dataset.map(dsconv)
+
+    classifier = pipeline(model=args.model_name, device=args.device)
 
     gold_labels = []
     pred_labels = []
     results = []
-    for x in utils.load_jsonl(args.test_file).to_dict(orient="records"):
-        r = classifier(x['title'] + "\n" + x['body'],
-                       candidate_labels=list(args.label2id.keys()))
-        p = args.label2id[r['labels'][0]]
+    for example,result in zip(dataset,
+                              classifier(KeyDataset(dataset, 'text'),
+                                         batch_size=args.batch_size,
+                                         candidate_labels=list(args.label2id.keys()))):
+        p = args.label2id[result['labels'][0]]
         pred_labels.append(p)
-        gold_labels.append(x['label'])
-        results.append({'id': x['id'], 'gold_label': x['label'], 'predicted_label': p})
+        gold_labels.append(example['label'])
+        results.append({'id': example['id'],
+                        'gold_label': example['label'],
+                        'predicted_label': p})
 
     accuracy: float = accuracy_score(gold_labels, pred_labels)
     precision, recall, f1, _ = precision_recall_fscore_support(
